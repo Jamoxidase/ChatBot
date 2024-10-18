@@ -13,28 +13,28 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
 from urllib.parse import quote
-from werkzeug.serving import run_simple
+from werkzeug.serving import run_simple # simple server for development
 import sys
 import socket
 import time
 import traceback
-
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 
+"""
+Flask Application Setup:
+
+The code creates a Flask application instance: app = Flask(__name__)
+It configures CORS (Cross-Origin Resource Sharing) for the Flask app to allow requests from specific origins.
+"""
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": ["http://localhost:3000", "http://localhost:*", "file://*"]}})
-
-
-
-
 
 # Set up Anthropic client
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 if not ANTHROPIC_API_KEY:
     raise ValueError("Please set the ANTHROPIC_API_KEY environment variable")
-
 
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -388,22 +388,9 @@ def clear_feedback():
     feedback_list = []
     return jsonify({"message": "Feedback cleared successfully"}), 200
 
-def find_free_port(start_port=8080, max_port=8090):
-    for port in range(start_port, max_port + 1):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(('', port))
-                return port
-            except OSError:
-                continue
-    return None
 
 def run_server():
-    port = find_free_port()
-    if port is None:
-        print("Could not find a free port. Exiting.")
-        sys.exit(1)
-    
+    port = 8080
     print(f"Starting server on port {port}")
     run_simple('127.0.0.1', port, app, use_reloader=False, use_debugger=False)
 
