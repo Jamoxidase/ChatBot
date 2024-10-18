@@ -2,8 +2,6 @@
 Demo of chatbot using existing data sources
 
 
-Here’s a basic set of instructions to help users get your Python backend and React frontend running on their machine. These instructions assume users do not have npm or Python installed, so it includes setup steps for both.
-
 Instructions to Set Up and Run the Project
 1. Install Node.js and npm (for React frontend)
 
