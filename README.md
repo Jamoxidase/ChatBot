@@ -8,25 +8,11 @@ Instructions to Set Up and Run the Project
 1. Install Node.js and npm (for React frontend)
 
 Visit the Node.js website and download the latest LTS version, which comes with npm.
-Follow the installation instructions for your operating system.
-After installation, verify that both Node.js and npm are installed correctly by running the following commands in your terminal:
-bash
-Copy code
-node -v
-npm -v
-This should return version numbers for both Node.js and npm.
+Follow the installation instructions for your operating system. 
+(node.js)[https://nodejs.org/en/download/package-manager]
 
 
 3. Clone the Project Repository
-
-Clone the project from your Git repository (replace your-repo-url with your actual repository URL):
-bash
-Copy code
-git clone your-repo-url
-Change to the project directory:
-bash
-Copy code
-cd your-project-directory
 
 
 4. Set Up and Run the Backend (Python)
