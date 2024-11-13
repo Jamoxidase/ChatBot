@@ -1,11 +1,12 @@
-import ChatInterface from './components/chat/ChatInterface'
+import { AuthProvider } from './components/chat/AuthContext';
+import ChatInterface from './components/chat/ChatInterface';
 
 function App() {
   return (
-    <div className="h-screen">
+    <AuthProvider>
       <ChatInterface />
-    </div>
-  )
+    </AuthProvider>
+  );
 }
 
-export default App
+export default App;

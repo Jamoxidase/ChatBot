@@ -1,12 +1,79 @@
-import { useState } from 'react';
-import { ChevronDown, ChevronRight, Copy, X, ExternalLink, Box } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { ChevronDown, ChevronRight, Copy, X, ExternalLink, Box, Search } from 'lucide-react';
 import JmolViewer from '../JmolViewer';
 
-const ArtifactsPanel = ({ sequences, isOpen, onClose, width }) => {
+const BASE_URL = 'https://gtrnadb.ucsc.edu/genomes/eukaryota/Hsapi19/dummyDir/';
+
+const TableRow = ({ label, value }) => (
+  <div className="grid grid-cols-[200px,1fr] border-b border-gray-700 last:border-b-0">
+    <div className="text-sm font-medium text-gray-300 p-3 border-r border-gray-700">
+      {label}
+    </div>
+    <div className="text-sm text-gray-400 p-3">
+      {value}
+    </div>
+  </div>
+);
+
+
+const ArtifactsPanel = ({ tableData = {}, isOpen, onClose, width }) => {
   const [expandedItems, setExpandedItems] = useState({});
+  const [expandedSubfields, setExpandedSubfields] = useState({});
   const [copyStatus, setCopyStatus] = useState({});
   const [jmolData, setJmolData] = useState(null);
   const [showJmolViewer, setShowJmolViewer] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Process and deduplicate data based on gene symbol and organism
+  const processedData = useMemo(() => {
+    const processed = {};
+    
+    Object.entries(tableData).forEach(([tableName, rows]) => {
+      if (!Array.isArray(rows)) return;
+      
+      processed[tableName] = rows.reduce((acc, row) => {
+        const key = `${row.GtRNAdb_Gene_Symbol}-${row.overview?.Organism || 'unknown'}`;
+        
+        // If this key already exists, only update if the new data is newer
+        // You might want to add a timestamp field to your data to make this more robust
+        if (!acc[key] || (row.timestamp > acc[key].timestamp)) {
+          acc[key] = row;
+        }
+        
+        return acc;
+      }, {});
+    });
+
+    return processed;
+  }, [tableData]);
+
+  // Filter data based on search query
+  const filteredData = useMemo(() => {
+    if (!searchQuery.trim()) return processedData;
+
+    const query = searchQuery.toLowerCase();
+    const filtered = {};
+
+    Object.entries(processedData).forEach(([tableName, entries]) => {
+      const filteredEntries = {};
+      
+      Object.entries(entries).forEach(([key, entry]) => {
+        if (
+          entry.GtRNAdb_Gene_Symbol?.toLowerCase().includes(query) ||
+          entry.friendly_name?.toLowerCase().includes(query) ||
+          entry.overview?.Organism?.toLowerCase().includes(query)
+        ) {
+          filteredEntries[key] = entry;
+        }
+      });
+
+      if (Object.keys(filteredEntries).length > 0) {
+        filtered[tableName] = filteredEntries;
+      }
+    });
+
+    return filtered;
+  }, [processedData, searchQuery]);
 
   const toggleItem = (id) => {
     setExpandedItems(prev => ({
@@ -15,13 +82,15 @@ const ArtifactsPanel = ({ sequences, isOpen, onClose, width }) => {
     }));
   };
 
+  const toggleSubfield = (itemId, subfieldKey) => {
+    const key = `${itemId}-${subfieldKey}`;
+    setExpandedSubfields(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
   const handleOpenJmol = (blocksData) => {
-    //console.log
-    console.log('=== Opening JMol Viewer ===');
-    console.log('1. Blocks data type:', typeof blocksData);
-    console.log('2. Blocks data length:', blocksData.length);
-    console.log('3. First 100 characters:', blocksData.substring(0, 100));
-    
     setJmolData(blocksData);
     setShowJmolViewer(true);
   };
@@ -30,31 +99,84 @@ const ArtifactsPanel = ({ sequences, isOpen, onClose, width }) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopyStatus({ id, section });
-      setTimeout(() => setCopyStatus({}), 2000); // Clear after 2s
+      setTimeout(() => setCopyStatus({}), 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
     }
   };
 
-  const DataSection = ({ title, data, id, section }) => {
+  const getImageUrl = (imagePath, overview) => {
+    if (overview?.Organism === 'Homo sapiens') {
+      return `${BASE_URL}${imagePath}`;
+    }
+    return imagePath;
+  };
+
+  const renderDataField = (itemId, key, value, overview = null) => {
+    const subfieldKey = `${itemId}-${key}`;
+    
+    if (typeof value === 'object' && value !== null) {
+      return (
+        <div key={key} className="mb-2">
+          <button
+            onClick={() => toggleSubfield(itemId, key)}
+            className="flex items-center gap-2 w-full text-left px-3 py-2 hover:bg-gray-800/50 rounded-md"
+          >
+            {expandedSubfields[subfieldKey] ? 
+              <ChevronDown size={14} className="flex-shrink-0 text-gray-400" /> : 
+              <ChevronRight size={14} className="flex-shrink-0 text-gray-400" />
+            }
+            <span className="text-sm font-semibold text-gray-200">{key}</span>
+          </button>
+          {expandedSubfields[subfieldKey] && (
+  <div className="ml-6 mt-2 border-2 border-gray-700 rounded-md overflow-hidden">
+    {Object.entries(value).map(([subKey, subValue]) => (
+      <TableRow 
+        key={subKey}
+        label={subKey}
+        value={
+          key === 'Images' ? (
+            <img
+              src={getImageUrl(subValue, overview)}
+              alt={subKey}
+              className="rounded-md border border-gray-700"
+              style={{ maxWidth: '100%' }}
+            />
+          ) : subValue
+        }
+      />
+    ))}
+  </div>
+)}
+        </div>
+      );
+    }
+  
+    return <TableRow key={key} label={key} value={value} />;
+  };
+
+  const DataSection = ({ title, data, id, section, overview = null }) => {
     if (!data) return null;
     const isCopied = copyStatus.id === id && copyStatus.section === section;
-    
+
     return (
       <div className="mb-4">
         <div className="flex justify-between items-center mb-2">
-          <span className="text-sm font-medium text-gray-600">{title}</span>
+          <span className="text-sm font-medium text-gray-300">{title}</span>
           <button
             onClick={() => copyToClipboard(JSON.stringify(data, null, 2), id, section)}
-            className="p-1.5 hover:bg-gray-100 rounded-md transition-colors flex items-center gap-1 text-xs text-gray-600"
+            className="p-1.5 hover:bg-gray-700 rounded-md transition-colors flex items-center gap-1 text-xs text-gray-400"
           >
             <Copy size={14} />
             {isCopied ? 'Copied!' : 'Copy'}
           </button>
         </div>
-        <pre className="text-sm bg-gray-50 p-3 rounded-md overflow-x-auto whitespace-pre-wrap break-words border border-gray-100">
-          {JSON.stringify(data, null, 2)}
-        </pre>
+        
+        <div className="bg-gray-900 rounded-md overflow-hidden border border-gray-700">
+          {Object.entries(data).map(([key, value]) =>
+            renderDataField(id, key, value, overview)
+          )}
+        </div>
       </div>
     );
   };
@@ -63,111 +185,141 @@ const ArtifactsPanel = ({ sequences, isOpen, onClose, width }) => {
 
   return (
     <>
-      <div style={{ width }} className="h-full border-r bg-white flex flex-col">
-        <div className="flex justify-between items-center px-4 py-3 border-b bg-gray-50">
-          <h2 className="text-lg font-semibold text-gray-800">Sequences</h2>
+      <div style={{ width }} className="h-full border-r border-gray-700 bg-gray-900 flex flex-col">
+        <div className="flex justify-between items-center px-4 py-3 border-b border-gray-700 bg-gray-800">
+          <h2 className="text-lg font-semibold text-gray-100">Data Explorer</h2>
           <button
             onClick={onClose}
-            className="p-1.5 hover:bg-gray-200 rounded-md transition-colors"
+            className="p-1.5 hover:bg-gray-700 rounded-md transition-colors text-gray-400 
+                     hover:text-gray-200"
             aria-label="Close panel"
           >
             <X size={18} />
           </button>
         </div>
 
-        <div className="overflow-y-auto flex-1 px-4 py-2">
-          {Object.entries(sequences).map(([id, data]) => (
-            <div key={id} className="mb-3 rounded-lg border border-gray-200">
-              <div className="flex items-center justify-between p-3 hover:bg-gray-50 transition-colors rounded-lg">
-                <button
-                  onClick={() => toggleItem(id)}
-                  className="flex items-center gap-2 text-left flex-1"
-                >
-                  {expandedItems[id] ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                  <span className="font-medium text-gray-900">
-                    {data.friendly_name || id}
-                  </span>
-                </button>
-                {data.tool_data && data.tool_data.blocks_file && (
-                  <button
-                    onClick={() => handleOpenJmol(data.tool_data.blocks_file)}
-                    className="p-1.5 hover:bg-gray-100 rounded-md transition-colors"
-                    title="View 3D Structure"
-                  >
-                    <Box size={18} className="text-blue-600" />
-                  </button>
-                )}
-              </div>
-              
-              {expandedItems[id] && (
-                <div className="p-3 border-t border-gray-100">
-                  <DataSection 
-                    title="Sequence Data" 
-                    data={data.sequence_data} 
-                    id={id} 
-                    section="sequence"
-                  />
-                  
-                  {data.tool_data?.trnascan_se_ss && (
-                    <DataSection 
-                      title="tRNAscan-SE Structure" 
-                      data={data.tool_data.trnascan_se_ss} 
-                      id={id} 
-                      section="trnascan"
-                    />
-                  )}
-                  
-                  {data.tool_data?.sprinzl_pos && (
-                    <DataSection 
-                      title="Sprinzl Positions" 
-                      data={data.tool_data.sprinzl_pos} 
-                      id={id} 
-                      section="sprinzl"
-                    />
-                  )}
+        <div className="px-4 py-2 border-b border-gray-700">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by gene symbol..."
+              className="w-full pl-9 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-md 
+                       text-sm text-gray-200 placeholder-gray-500
+                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-500" />
+          </div>
+        </div>
 
-                  {data.tool_data && data.tool_data.blocks_file && (
-                    <div className="mt-4 flex justify-end">
+        <div className="overflow-y-auto flex-1 px-4 py-2">
+          {Object.entries(filteredData).map(([tableName, entries]) => (
+            <div key={tableName} className="mb-6">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-md font-semibold text-gray-200 capitalize">
+                  {tableName}
+                </h3>
+                <span className="text-sm text-gray-400">
+                  {Object.keys(entries).length} entries
+                </span>
+              </div>
+
+              {Object.entries(entries).map(([key, data], index) => (
+                <div key={key} className="mb-3 rounded-lg border border-gray-700 bg-gray-800">
+                  <div className="flex items-center justify-between p-3 hover:bg-gray-700/50 
+                                transition-colors rounded-lg">
+                    <button
+                      onClick={() => toggleItem(key)}
+                      className="flex items-center gap-2 text-left flex-1"
+                    >
+                      {expandedItems[key] ? 
+                        <ChevronDown size={18} className="text-gray-400" /> : 
+                        <ChevronRight size={18} className="text-gray-400" />
+                      }
+                      <span className="font-medium text-gray-100">
+                        {data.friendly_name || data.GtRNAdb_Gene_Symbol || `Entry ${index + 1}`}
+                      </span>
+                      {data.overview?.Organism && (
+                        <span className="text-sm text-gray-400">
+                          ({data.overview.Organism})
+                        </span>
+                      )}
+                    </button>
+                    {data.tool_data?.blocks_file && (
                       <button
                         onClick={() => handleOpenJmol(data.tool_data.blocks_file)}
-                        className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 flex items-center gap-1.5"
+                        className="p-1.5 hover:bg-gray-700 rounded-md transition-colors"
+                        title="View 3D Structure"
                       >
-                        <Box size={16} />
-                        <span className="text-sm">View 3D Structure</span>
+                        <Box size={18} className="text-blue-400" />
                       </button>
+                    )}
+                  </div>
+                  
+                  {expandedItems[key] && (
+                    <div className="p-3 border-t border-gray-700">
+                      <DataSection 
+                        title="Core Data" 
+                        data={{
+                          GtRNAdb_Gene_Symbol: data.GtRNAdb_Gene_Symbol,
+                          tRNAscan_SE_ID: data.tRNAscan_SE_ID,
+                          Anticodon: data.Anticodon,
+                          Isotype_from_Anticodon: data.Isotype_from_Anticodon,
+                          Sequence: data.sequences,
+                          Overview: data.overview,
+                          Images: data.images,
+                          
+                        }}
+                        id={key}
+                        section="core"
+                        overview={data.overview}
+                      />
+                      
+                      {data.tool_data?.trnascan_se_ss && (
+                        <DataSection 
+                          title="tRNAscan-SE Structure" 
+                          data={data.trnascan_se_ss} 
+                          id={key}
+                          section="trnascan"
+                        />
+                      )}
+                      
+                      {data.tool_data?.sprinzl_pos && (
+                        <DataSection 
+                          title="Sprinzl Positions" 
+                          data={data.sprinzl_pos} 
+                          id={key}
+                          section="sprinzl"
+                          overview={data.overview}
+                        />
+                      )}
+
+                      {data.rnacentral_link && (
+                        <div className="mt-4 pt-3 border-t border-gray-700">
+                          <a
+                            href={data.rnacentral_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 text-sm text-blue-400 
+                                     hover:text-blue-300"
+                          >
+                            <ExternalLink size={16} />
+                            View on RNA Central
+                          </a>
+                        </div>
+                      )}
                     </div>
                   )}
-
-                  <div className="mt-4 pt-3 border-t border-gray-100">
-                    <a
-                      href={data.rnacentral_link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 transition-colors"
-                    >
-                      <ExternalLink size={14} />
-                      View in RNAcentral
-                    </a>
-                  </div>
                 </div>
-              )}
+              ))}
             </div>
           ))}
-
-          {Object.keys(sequences).length === 0 && (
-            <div className="text-center py-8 text-gray-500">
-              <p>No sequences available</p>
-            </div>
-          )}
         </div>
       </div>
 
-      {showJmolViewer && (
-        <JmolViewer
-          data={jmolData}
-          isOpen={showJmolViewer}
-          onClose={() => setShowJmolViewer(false)}
-        />
+      {showJmolViewer && jmolData && (
+        <JmolViewer data={jmolData} onClose={() => setShowJmolViewer(false)} />
       )}
     </>
   );
